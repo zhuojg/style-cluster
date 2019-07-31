@@ -7,32 +7,31 @@ from config.config import *
 import faiss
 import os
 from sklearn.cluster import DBSCAN
-
-path_prefix = './data'
+import shutil
 
 
 class Cluster:
-    def __init__(self, feature_path, save_path, center_num):
+    def __init__(self, feature_path, center_num):
         self.image_paths, self.features = joblib.load(
             os.path.join(feature_path)
         )
         self.ids = [int(path.split('/')[-1].split('.')[0], base=16) for path in self.image_paths]
         self.features = self.features.astype('float32')
-        self.save_path = save_path
         self.center_num = center_num
-
-    def run(self):
         ncentroids = self.center_num
         niter = 100
         verbose = True
         d = self.features.shape[1]
-        kmeans = faiss.Kmeans(d, ncentroids, niter=niter, verbose=verbose)
-        kmeans.train(self.features)
-        print(kmeans.centroids)
+        self.kmeans = faiss.Kmeans(d, ncentroids, niter=niter, verbose=verbose)
+        self.kmeans.train(self.features)
+        self.index = faiss.IndexFlatL2(d)
+        self.index.add(self.features)
 
-        index = faiss.IndexFlatL2(d)
-        index.add(self.features)
-        D, I = index.search(kmeans.centroids, 50)
+    def show_in_pic(self, save_path, num_per_category):
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+
+        D, I = self.index.search(self.kmeans.centroids, num_per_category)
 
         img_paths = []
         scores = []
@@ -54,28 +53,34 @@ class Cluster:
                 image = image.convert('RGB')
                 plt.imshow(image)
                 plt.axis('off')
-            plt.savefig(os.path.join(self.save_path, '%s.png' % str(i)), dpi=600)
+            plt.savefig(os.path.join(save_path, '%s.png' % str(i)), dpi=600)
 
-    def run_dbscan(self):
-        possible_eps = [(0.005 * i + 0.55) for i in range(1, 20)]
-        for p_eps in possible_eps:
-            dbscan = DBSCAN(eps=p_eps, min_samples=10, algorithm='auto')
-            dbscan.fit(self.features)
+    def copy_images(self, save_path, num_per_category):
+        D, I = self.index.search(self.kmeans.centroids, num_per_category)
 
-            labels = dbscan.labels_
-            result = {}
-            for item in labels:
-                if item in result.keys():
-                    result[item] = result[item] + 1
-                else:
-                    result[item] = 0
-            print('eps=%s: %s' % (str(p_eps), str(result)))
+        img_paths = []
+        scores = []
+        for i, item in enumerate(I):
+            temp_paths = []
+            temp_scores = []
+            for j, index in enumerate(item):
+                temp_paths.append(self.image_paths[index])
+                temp_scores.append(D[i][j])
+            img_paths.append(temp_paths)
+            scores.append(temp_scores)
 
-    def show_features(self):
-        print(self.features)
+        for i, cluster in enumerate(img_paths):
+            new_path = os.path.join(save_path, str(i))
+            if not os.path.exists(new_path):
+                os.makedirs(new_path)
+            for j, img in enumerate(cluster):
+                file_name = img.split('/')[-1]
+                label = img.split('/')[-2].split('_')[0]
+                # you can decide how to rename the file by yourself
+                shutil.copyfile(img, os.path.join(new_path, label + '_' + file_name))
 
 
 if __name__ == '__main__':
     # remember to change the feature_path and save_path!
-    c = Cluster(feature_path='./result-lab-data/pca_features.pkl', save_path='./result-lab-data', center_num=15)
-    c.run()
+    c = Cluster(feature_path='../result-lab-data/pca_features.pkl', center_num=15)
+    c.show_in_pic(save_path='../result-lab-data', num_per_category=50)

@@ -1,15 +1,9 @@
 import numpy as np
 from sklearn.externals import joblib
 from sklearn.decomposition import PCA
-from sklearn.neighbors import BallTree
 import os
-from sklearn.preprocessing import normalize as sknormalize
-import time
-from model.content_model import ContentModel
 from model.style_model import StyleModel
-from sklearn.manifold import TSNE, LocallyLinearEmbedding
 import time
-import faiss
 
 
 def time_convert(second):
@@ -56,12 +50,15 @@ def get_image_list_recursion(train_path):
     return image_paths
 
 
-class StyleCluster:
+class StyleFeatureCalculator:
     def __init__(self, model, image_path, result_path, cnt=0):
         self.model = model
         self.cnt = cnt
         self.image_path = image_path
         self.result_path = result_path
+
+        if not os.path.exists(self.result_path):
+            os.makedirs(self.result_path)
 
     def batch_extract_feature(self, image_paths):
         features = []
@@ -113,16 +110,16 @@ class StyleCluster:
         return images, features
 
     # mode
-    # 1 - 重新使用CNN提取特征
-    # 2 - 使用计算完成的特征
-    def run(self, mode):
+    # 1 - extract features using CNN
+    # 2 - using existed CNN features
+    def run(self, mode, cnn_features_path):
         image_paths = []
         image_paths.extend((get_image_list_recursion(self.image_path)))
 
         if mode == 1:
             images, features = self.batch_extract_feature(image_paths)
         else:
-            images, features = joblib.load(os.path.join(self.result_path, 'cnn_features.pkl'))
+            images, features = joblib.load(cnn_features_path)
 
         # # t-SNE
         # tsne = TSNE(init='pca', random_state=0)
@@ -141,12 +138,12 @@ class StyleCluster:
         # joblib.dump((images, pq_features), os.path.join(self.result_path, 'pq_features.pkl'))
 
 
-        # 存储t-SNE计算的特征
+        # calculate features using t-SNE
         # tsne = joblib.load(os.path.join(path_prefix, 'tsne-result.pkl'))
         # tsne_features = tsne.fit_transform(features)
         # joblib.dump((images, tsne_features), os.path.join(self.result_path, 'tsne_features.pkl'))
 
-        # 存储PCA计算的特征
+        # calculate features using PCA
         pca_features = pca.fit_transform(features)
         joblib.dump((images, pca_features), os.path.join(self.result_path, 'pca_features.pkl'))
         # lle = LocallyLinearEmbedding(n_components=1024)
@@ -158,6 +155,8 @@ if __name__ == '__main__':
     styleModel = StyleModel()
 
     # remember to change the image_path and result_path!
-    job = StyleCluster(styleModel, image_path='../style_data', result_path='../result-lab-data')
+    job = StyleFeatureCalculator(styleModel,
+                                 image_path='../style_data',
+                                 result_path='../result-lab-data')
 
-    job.run(mode=2)
+    job.run(mode=1, cnn_features_path='../result-lab-data/cnn_features.pkl')

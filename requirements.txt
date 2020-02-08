@@ -1,0 +1,9 @@
+matplotlib
+Pillow
+joblib
+faiss-cpu
+scikit-learn
+config
+torch
+torchvision
+numpy

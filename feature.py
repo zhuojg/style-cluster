@@ -1,162 +1,99 @@
 import numpy as np
-from sklearn.externals import joblib
+import joblib
 from sklearn.decomposition import PCA
 import os
-from model.style_model import StyleModel
+from style_model import StyleModel
 import time
+from utils import time_convert, get_image_list, get_image_list_recursion
+import argparse
 
 
-def time_convert(second):
-    minute = 0
-    hour = 0
-    if second >= 60:
-        minute = int(second / 60)
-        second = second % 60
-    if minute >= 60:
-        hour = int(minute/60)
-        minute = minute % 60
-    if hour > 0:
-        return '%s h %s m %s s' % (str(hour), str(minute), str(second))
-    elif minute > 0:
-        return '%s m %s s' % (str(minute), str(second))
+def get_style_feature(model, image_path, result_path, cnt=0):
+    if not os.path.exists(result_path):
+        os.makedirs(result_path)
+    
+    image_path = get_image_list_recursion(image_path)
+
+    # only save the file name and category name
+    new_image_path = [item.split('/')[-2] + '/' + item.split('/')[-1] for item in image_path]
+    image_path = new_image_path
+
+    cnn_feature_path = os.path.join(result_path, 'cnn_features.pkl')
+
+    step = 200      # save result and print status every 200 images
+
+    # if the cnn_feature exists, start from the stop position
+    if os.path.exists(cnn_feature_path):
+        images, features = joblib.load(cnn_feature_path)
+        start_index = len(images)
+        print('start index: %s' % str(start_index))
     else:
-        return '%s s' % str(int(second))
-
-
-def get_image_list(train_path):
-    training_names = os.listdir(train_path)
-    image_paths = []
-    for training_name in training_names:
-        if training_name.split('/')[-1] == '.DS_Store':
-            continue
-        image_path = os.path.join(train_path, training_name)
-        image_paths += [image_path]
-    return image_paths
-
-
-def get_image_list_recursion(train_path):
-    training_names = os.listdir(train_path)
-
-    image_paths = []
-    for training_name in training_names:
-        if training_name.split('/')[-1] == '.DS_Store':
-            continue
-        path = os.path.join(train_path, training_name)
-
-        if os.path.isdir(path):
-            image_paths.extend(get_image_list(path))
-        else:
-            image_paths += [path]
-    return image_paths
-
-
-class StyleFeatureCalculator:
-    def __init__(self, model, image_path, result_path, cnt=0):
-        self.model = model
-        self.cnt = cnt
-        self.image_path = image_path
-        self.result_path = result_path
-
-        if not os.path.exists(self.result_path):
-            os.makedirs(self.result_path)
-
-    def batch_extract_feature(self, image_paths):
         features = []
         images = []
-        step = 200
         start_index = 0
-        cnn_feature_path = os.path.join(self.result_path, 'cnn_features.pkl')
-        if os.path.exists(cnn_feature_path):
-            before_images, _ = joblib.load(cnn_feature_path)
-            start_index = len(before_images)
-            print('start index: %s' % str(start_index))
 
-        start_time = time.time()
-        for i, path in enumerate(image_paths):
-            if i < start_index:
-                continue
-
-            try:
-                features.append(self.model.extract_feature(path))
-                images.append(path)
-                # print("get {} image feature success!".format(path))
-            except Exception as e:
-                print("get {} image feature failed!".format(path), e)
-            if i - start_index > 0 and i % 10 == 0:
-                time_used = time.time() - start_time
-                time_remained = time_used * (len(image_paths) - i - start_index) / (i - start_index)
-                print('%s / %s, time used: %s, time remained: %s'
-                      % (str(i), str(len(image_paths)), time_convert(time_used), time_convert(time_remained)))
-            if i >= self.cnt > 0:
-                break
-
-            if i > 0 and i % step == 0:
-                # 存储直接由CNN提取出的特征
-                if os.path.exists(cnn_feature_path):
-                    before_images, before_features = joblib.load(cnn_feature_path)
-
-                    features = np.concatenate((before_features, features), axis=0)
-                    before_images.extend(images)
-                    images = before_images
-                    joblib.dump((images, features), cnn_feature_path)
-                else:
-                    features = np.array(features)
-                    joblib.dump((images, features), cnn_feature_path)
-
-                images = []
-                features = []
-
-        features = np.array(features)
-        return images, features
-
-    # mode
-    # 1 - extract features using CNN
-    # 2 - using existed CNN features
-    def run(self, mode, cnn_features_path):
-        image_paths = []
-        image_paths.extend((get_image_list_recursion(self.image_path)))
-
-        if mode == 1:
-            images, features = self.batch_extract_feature(image_paths)
-        else:
-            images, features = joblib.load(cnn_features_path)
-
-        # # t-SNE
-        # tsne = TSNE(init='pca', random_state=0)
-        # tsne.fit(features[:3000])
-        # joblib.dump(tsne, os.path.join(self.result_path, 'tsne_result.pkl'))
-
-        # PCA
-        pca = PCA(n_components=1024, whiten=False, copy=False)
-        pca.fit(features)
-        joblib.dump(pca, os.path.join(self.result_path, 'pca_result.pkl'))
-
-        # # PQ
-        # pq = faiss.ProductQuantizer(131328, 2052, 64)
-        # pq.train(features)
-        # pq_features = pq.compute_codes(features)
-        # joblib.dump((images, pq_features), os.path.join(self.result_path, 'pq_features.pkl'))
+    for i, path in enumerate(image_path):
+        if i < start_index:
+            continue
+        
+        try:
+            features.append(model.extract_feature(path))
+            images.append(path)
+        except Exception as e:
+            print('get {} image feature failed: '.format(path), e)
+        
+        if i - start_index > 0 and i % 10 == 0:
+            print('%d / %d' % (i, len(image_path)))
+        
+        if i >= cnt > 0:
+            break
+        
+        if i > 0 and i % step == 0:
+            features = np.array(features)
+            joblib.dump((images, features), cnn_feature_path)
+        
+    features = np.array(features)
+    return images, features
 
 
-        # calculate features using t-SNE
-        # tsne = joblib.load(os.path.join(path_prefix, 'tsne-result.pkl'))
-        # tsne_features = tsne.fit_transform(features)
-        # joblib.dump((images, tsne_features), os.path.join(self.result_path, 'tsne_features.pkl'))
+def pca(images, features, n_components, result_path):
+    print('Constructing PCA model...')
+    # construct pca model
+    model = PCA(n_components=n_components, whiten=False, copy=False)
+    print('Fitting the features...')
+    model.fit(features)
+    joblib.dump(model, os.path.join(result_path, 'pca_result.pkl'))
+    print('Result stored in %s' % os.path.join(result_path, 'pca_result.pkl'))
 
-        # calculate features using PCA
-        pca_features = pca.fit_transform(features)
-        joblib.dump((images, pca_features), os.path.join(self.result_path, 'pca_features.pkl'))
-        # lle = LocallyLinearEmbedding(n_components=1024)
-        # lle_features = lle.fit_transform(features)
-        # joblib.dump((images, lle_features), os.path.join(self.result_path, 'lle_features.pkl'))
+    print('Processing features using PCA...')
+    # process features using PCA
+    pca_features = model.fit_transform(features)
+    joblib.dump((images, pca_features), os.path.join(result_path, 'pca_features.pkl'))
+    print('Result stored in %s' % os.path.join(result_path, 'pca_features.pkl'))
 
 
 if __name__ == '__main__':
-    styleModel = StyleModel()
+    parser = argparse.ArgumentParser(description='Generate features.')
+    flag_parser = parser.add_mutually_exclusive_group(required=False)
+    flag_parser.add_argument('--exist', dest='exist', action='store_true',
+                             help='use existed cnn features to calculate pca features')
+    flag_parser.add_argument('--no-exist', dest='exist', action='store_false',
+                             help='run get_style_feature function')
+    parser.set_defaults(exist=False)
 
-    # remember to change the image_path and result_path!
-    job = StyleFeatureCalculator(styleModel,
-                                 image_path='../style_data',
-                                 result_path='../result-lab-data')
+    parser.add_argument('--result_path', type=str, help='path to result files', required=True)
+    parser.add_argument('--data_path', type=str, help='path to data', required=True)
 
-    job.run(mode=1, cnn_features_path='../result-lab-data/cnn_features.pkl')
+    args = parser.parse_args()
+
+    if args.exist:
+        images, features = joblib.load(os.path.join(args.result_path, 'cnn_features.pkl'))
+    else:
+        style_model = StyleModel()
+        images, features = get_style_feature(
+            model=style_model,
+            image_path=args.data_path,
+            result_path=args.result_path
+        )
+
+    pca(images, features, 1024, args.result_path)

@@ -1,17 +1,19 @@
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import models
-
-from model.function import *
+import torch
 import numpy as np
 from torchvision.transforms import transforms
 import time
 from PIL import Image
 from PIL import ImageFile
-ImageFile.LOAD_TRUNCATED_IMAGES = True
 from sklearn.preprocessing import normalize as sknormalize
+from utils import rmac
 
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 def image_loader(image_name):
@@ -27,16 +29,13 @@ def image_loader(image_name):
         # fake batch dimension required to fit network's input dimensions
         loader = transforms.Compose(
             [
-
                 transforms.Resize(new_size),
-                # transforms.RandomHorizontalFlip(),
-                # transforms.RandomVerticalFlip(),
                 transforms.ToTensor(),
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ]
         )
         image = loader(im).unsqueeze(0)
-        # image_cuda = image.to(device, torch.float)
+        image_cuda = image.to(device, torch.float)
         images.append(image)
     return images
 
@@ -54,7 +53,6 @@ def image_loader_eval(image_name):
         # fake batch dimension required to fit network's input dimensions
         loader = transforms.Compose(
             [
-                # transforms.Grayscale(num_output_channels=3),
                 transforms.Resize(new_size),
                 transforms.ToTensor(),
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
